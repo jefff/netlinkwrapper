@@ -1,5 +1,6 @@
 #include "netlinkwrapper.h"
 #include "netlink/exception.h"
+#include "node_buffer.h"
 
 using namespace v8;
 
@@ -189,17 +190,26 @@ void NetLinkWrapper::Send(const FunctionCallbackInfo<Value>& args)
 
     NetLinkWrapper* obj = ObjectWrap::Unwrap<NetLinkWrapper>(args.Holder());
 
-    if(args.Length() != 1 || !args[0]->IsString())
-    {
-        isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "'send' first argument must be a string to send")));
+    const char* sendBuffer;
+    size_t sendLength;
+    
+    if (args.Length() > 0 && args[0]->IsString()) {
+        v8::String::Utf8Value param1(args[0]->ToString());
+        std::string writing(*param1);
+        sendBuffer = writing.c_str();
+        sendLength = writing.length();
+    } else if (args.Length() > 0 && node::Buffer::HasInstance(args[0]->ToObject())) {
+        Local<Object> sendObj = args[0]->ToObject();
+        sendBuffer = node::Buffer::Data(sendObj);
+        sendLength = node::Buffer::Length(sendObj);
+    } else {
+        isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "'send' first argument must be a string or buffer to send")));
         return;
     }
-    v8::String::Utf8Value param1(args[0]->ToString());
-    std::string writing(*param1);
 
     try
     {
-        obj->socket->send(writing.c_str(), writing.length());
+        obj->socket->send(sendBuffer, sendLength);
     }
     catch(NL::Exception& e)
     {
